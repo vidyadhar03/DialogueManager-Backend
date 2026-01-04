@@ -1,0 +1,38 @@
+# --- Python Basics ---
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.db
+*.sqlite3
+
+# --- Virtual Environments ---
+venv/
+env/
+.venv/
+.env
+
+# --- Environment Variables (CRITICAL) ---
+.env
+.env.local
+
+# --- Operating System Files ---
+.DS_Store
+Thumbs.db
+
+# --- IDE Settings ---
+.vscode/
+.idea/
+
+# --- Application Data (Don't commit data files) ---
+*.xlsx
+*.xls
+*.csv
+uploads/
+downloads/
+logs/
+*.log
+
+# --- Pytest / Testing ---
+.pytest_cache/
