@@ -9,6 +9,9 @@ from typing import List, Dict, Any
 from openai import OpenAI
 from io import BytesIO
 from dotenv import load_dotenv
+import requests
+import firebase_admin
+from firebase_admin import credentials, firestore
 
 # 1. Setup Configuration
 load_dotenv() # Loads OPENAI_API_KEY from .env file
@@ -16,6 +19,15 @@ load_dotenv() # Loads OPENAI_API_KEY from .env file
 # Configure Logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Initialize Firebase (Check ensures we don't init twice if auto-reload runs)
+if not firebase_admin._apps:
+    # Make sure this filename matches what you downloaded!
+    cred = credentials.Certificate("firebase_credentials.json") 
+    firebase_admin.initialize_app(cred)
+
+# Get DB Reference
+db = firestore.client()
 
 app = FastAPI()
 
@@ -181,6 +193,55 @@ async def analyze_emotions_batch(payload: TagRequest):
     except Exception as e:
         logger.error(f"OpenAI Error: {e}")
         raise HTTPException(status_code=500, detail=f"OpenAI processing failed: {str(e)}")
+
+
+# --- 1. ADMIN ROUTE: Syncs ElevenLabs -> Firebase ---
+# Run this manually via Swagger UI (http://localhost:8000/docs) whenever you add a new voice.
+@app.post("/sync_voices")
+async def sync_voices_to_db():
+    url = "https://api.elevenlabs.io/v1/voices"
+    headers = {
+        "xi-api-key": os.getenv("ELEVENLABS_API_KEY"), # Make sure to add this to .env
+        "Content-Type": "application/json"
+    }
+    
+    response = requests.get(url, headers=headers)
+    if response.status_code != 200:
+        return {"error": "Failed to fetch from ElevenLabs", "details": response.text}
+    
+    data = response.json()
+    voices = data.get('voices', [])
+    
+    # Save to Firestore 'voices' collection
+    batch = db.batch()
+    for voice in voices:
+        doc_ref = db.collection("voices").document(voice["voice_id"])
+        batch.set(doc_ref, {
+            "name": voice["name"],
+            "voice_id": voice["voice_id"],
+            "category": voice.get("category", "generated"),
+            "preview_url": voice.get("preview_url", "")
+        })
+    
+    batch.commit()
+    return {"status": "success", "count": len(voices), "message": "Firebase updated with latest ElevenLabs voices"}
+
+# --- 2. PUBLIC ROUTE: Frontend -> Firebase ---
+# This is what your React App will call on load. Fast & Free.
+@app.get("/voices")
+async def get_voices_from_db():
+    voices_ref = db.collection("voices")
+    docs = voices_ref.stream()
+    
+    voice_list = []
+    for doc in docs:
+        voice_list.append(doc.to_dict())
+        
+    # Sort them alphabetically by name for the dropdown
+    voice_list.sort(key=lambda x: x['name'])
+    
+    return {"voices": voice_list}
+
 
 # Run command (for testing inside this file, though usually run via terminal)
 if __name__ == "__main__":

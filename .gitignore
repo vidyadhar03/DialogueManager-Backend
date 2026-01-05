@@ -36,3 +36,6 @@ logs/
 
 # --- Pytest / Testing ---
 .pytest_cache/
+
+#firebase
+firebase_credentials.json
