@@ -12,6 +12,7 @@ from dotenv import load_dotenv
 import requests
 import firebase_admin
 from firebase_admin import credentials, firestore
+from datetime import datetime
 
 # 1. Setup Configuration
 load_dotenv() 
@@ -213,15 +214,22 @@ async def get_voices_from_db():
 @app.post("/series")
 async def create_series(series: SeriesModel):
     doc_ref = db.collection("series").document()
+    
+    # Data for Database (Uses SERVER_TIMESTAMP)
     series_data = {
         "id": doc_ref.id,
         "title": series.title,
         "description": series.description,
-        "created_at": firestore.SERVER_TIMESTAMP,
+        "created_at": firestore.SERVER_TIMESTAMP, 
         "character_map": {}
     }
     doc_ref.set(series_data)
-    return {"status": "success", "id": doc_ref.id, "data": series_data}
+    
+    # Data for Frontend (Uses String, so it doesn't crash)
+    response_data = series_data.copy()
+    response_data["created_at"] = datetime.now().isoformat()
+    
+    return {"status": "success", "id": doc_ref.id, "data": response_data}
 
 # 2. GET ALL SERIES
 @app.get("/series")
@@ -246,7 +254,10 @@ async def get_series_details(series_id: str):
 # 4. CREATE EPISODE
 @app.post("/series/{series_id}/episodes")
 async def create_episode(series_id: str, episode: EpisodeModel):
+    # Reference to the sub-collection 'episodes' inside the specific series
     ep_ref = db.collection("series").document(series_id).collection("episodes").document()
+    
+    # Data for Database (Uses SERVER_TIMESTAMP)
     episode_data = {
         "id": ep_ref.id,
         "title": episode.title,
@@ -255,7 +266,12 @@ async def create_episode(series_id: str, episode: EpisodeModel):
         "series_id": series_id
     }
     ep_ref.set(episode_data)
-    return {"status": "success", "id": ep_ref.id, "data": episode_data}
+    
+    # Data for Frontend (Uses String to avoid 'Sentinel' error)
+    response_data = episode_data.copy()
+    response_data["created_at"] = datetime.now().isoformat()
+    
+    return {"status": "success", "id": ep_ref.id, "data": response_data}
 
 # 5. LIST EPISODES
 @app.get("/series/{series_id}/episodes")
@@ -268,6 +284,14 @@ async def get_episodes(series_id: str):
             data["created_at"] = str(data["created_at"])
         episodes.append(data)
     return {"episodes": episodes}
+
+# 6. DELETE SERIES
+@app.delete("/series/{series_id}")
+async def delete_series(series_id: str):
+    # Note: In Firestore, deleting a document does not automatically delete sub-collections 
+    # (like episodes). However, deleting the parent hides it from the list effectively.
+    db.collection("series").document(series_id).delete()
+    return {"status": "success", "message": f"Series {series_id} deleted"}
 
 if __name__ == "__main__":
     import uvicorn
