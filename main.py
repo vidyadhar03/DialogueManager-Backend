@@ -13,6 +13,7 @@ import requests
 import firebase_admin
 from firebase_admin import credentials, firestore
 from datetime import datetime
+from fastapi.responses import StreamingResponse
 
 # 1. Setup Configuration
 load_dotenv() 
@@ -292,6 +293,51 @@ async def delete_series(series_id: str):
     # (like episodes). However, deleting the parent hides it from the list effectively.
     db.collection("series").document(series_id).delete()
     return {"status": "success", "message": f"Series {series_id} deleted"}
+
+# 7. DELETE EPISODE
+@app.delete("/series/{series_id}/episodes/{episode_id}")
+async def delete_episode(series_id: str, episode_id: str):
+    db.collection("series").document(series_id).collection("episodes").document(episode_id).delete()
+    return {"status": "success", "message": f"Episode {episode_id} deleted"}
+
+# 8. GENERATE AUDIO (Updated Model ID)
+@app.post("/generate_audio")
+async def generate_audio(payload: dict = Body(...)):
+    """
+    Payload: { "text": "Hello world", "voice_id": "..." }
+    """
+    text = payload.get("text")
+    voice_id = payload.get("voice_id")
+    
+    if not text or not voice_id:
+        raise HTTPException(status_code=400, detail="Missing text or voice_id")
+
+    # ElevenLabs API Call
+    url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
+    
+    headers = {
+        "xi-api-key": os.getenv("ELEVENLABS_API_KEY"),
+        "Content-Type": "application/json"
+    }
+    
+    data = {
+        "text": text,
+        "model_id": "eleven_v3", 
+        "voice_settings": {
+            "stability": 0.5,
+            "similarity_boost": 0.75
+        }
+    }
+    
+    # Request audio from ElevenLabs (Stream=True is critical for speed)
+    response = requests.post(url, json=data, headers=headers, stream=True)
+    
+    if response.status_code != 200:
+        logger.error(f"ElevenLabs Error: {response.text}")
+        raise HTTPException(status_code=500, detail=f"ElevenLabs Error: {response.text}")
+        
+    # Stream the raw audio bytes back to the frontend
+    return StreamingResponse(BytesIO(response.content), media_type="audio/mpeg")
 
 if __name__ == "__main__":
     import uvicorn
